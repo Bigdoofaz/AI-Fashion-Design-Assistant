@@ -62,7 +62,7 @@
   }
   .hero-bg::after {
     content: ''; position: absolute; inset: 0;
-    background: url('Untitled design (1).jpg') center/cover no-repeat;
+    background: url('main oic.jpg') center/cover no-repeat;
     opacity: 0.35;
   }
   .hero-content { position: relative; z-index: 1; padding: 120px 20px 60px; }
@@ -298,7 +298,7 @@
     <h2 class="section-title">Who Are You Styling Today?</h2>
     <div class="gender-grid">
       <div class="gender-card" onclick="selectGender('Male')">
-        <img class="gender-img" src="Untitled design (2).jpg" alt="Male style">
+        <img class="gender-img" src="male.jpg" alt="Male style">
         <button class="btn">Male</button>
       </div>
       <div class="gender-card" onclick="selectGender('Female')">
@@ -367,14 +367,10 @@
     
     <div class="results-section">
       <h3 class="results-label">Recommended Outfits:</h3>
-      <div class="outfit-recs" id="outfit-recs"></div>
-    </div>
-
-    <div class="results-section">
-      <h3 class="results-label">Your Pinterest Moodboard:</h3>
       <div id="pinterest-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-top: 20px;">
         </div>
     </div>
+
 
     <div class="results-section" style="border-top: 1px solid #222; padding-top: 24px; opacity: 0.7; font-style: italic; font-size: 0.85rem; line-height: 1.6;">
       <p><strong>Note:</strong> This analysis serves as a guide based on color theory. Fashion is ultimately an expression of personal identity and choice—we encourage you to explore, break rules, and wear what makes you feel most confident!</p>
@@ -396,7 +392,7 @@
     </div>
     <div class="about-images">
       <img class="about-img" src="img1.jpg" alt="Fashion rack">
-      <img class="about-img" src="img2.jpg" alt="Fashion models">
+      <img class="about-img" src="img2.jpg"" alt="Fashion models">
     </div>
   </div>
 </section>
@@ -481,94 +477,76 @@ async function startAnalysis() {
   goTo('page-analyzing');
 
 
-  // Extract base64 data (strip data URL prefix)
-  const base64Data = uploadedImage.split(',')[1];
-  const mediaType  = uploadedImage.split(';')[0].split(':')[1] || 'image/jpeg';
+  // Convert the uploaded data URL back into a file-like Blob so we can send it
+  // as multipart/form-data to our own backend (Flask + CNN model).
+  const blob = await (await fetch(uploadedImage)).blob();
 
+  // Backend expects exactly: 'formal', 'semi_formal', or 'casual'
+  const styleMap = {
+    'formal': 'formal',
+    'semi formal': 'semi_formal',
+    'informal': 'casual',
+    'casual': 'casual'
+  };
+  const genderValue = selectedGender.toLowerCase();
+  const styleValue = styleMap[selectedStyle.toLowerCase()] || selectedStyle.toLowerCase().replace(/\s+/g, '_');
 
-  const prompt = `You are NASA – a personal skin tone analyzer and fashion recommender.
-
-
-The user is ${selectedGender} and prefers ${selectedStyle} style.
-
-
-Look at the uploaded photo and:
-1. Identify 4–6 flattering clothing colors for their skin tone. For each give: color name and hex code.
-2. Recommend 3 specific ${selectedStyle.toLowerCase()} outfit ideas that suit their complexion and gender.
-
-
-Respond ONLY in this JSON format, no extra text:
-{
-  "colors": [
-    {"name": "Warm Ivory", "hex": "#F5F0E8"},
-    {"name": "Dusty Rose", "hex": "#C8A4A5"}
-  ],
-  "outfits": [
-    "Outfit 1: description here",
-    "Outfit 2: description here",
-    "Outfit 3: description here"
-  ]
-}`;
-
+  const formData = new FormData();
+  formData.append('image', blob, 'photo.jpg');
+  formData.append('gender', genderValue);
+  formData.append('style', styleValue);
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    // Our own Flask backend running on this laptop (CNN skin tone model + CV face detection)
+    const res = await fetch('http://localhost:5000/predict', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
-            { type: 'text', text: prompt }
-          ]
-        }]
-      })
+      body: formData
     });
-
 
     const data = await res.json();
-    const text = data.content.map(b => b.text || '').join('');
-    const clean = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
-    renderResults(parsed);
-  } catch(err) {
-    // Fallback demo results
-    renderResults({
-      colors: [
-        {name:'Warm Ivory', hex:'#F5F0E8'},
-        {name:'Dusty Rose', hex:'#C8A4A5'},
-        {name:'Caramel', hex:'#C68B59'},
-        {name:'Forest Green', hex:'#4A7C59'},
-        {name:'Navy', hex:'#1B2A4A'},
-        {name:'Terracotta', hex:'#C06040'}
-      ],
-      outfits: [
-        `Outfit 1: A ${selectedStyle.toLowerCase()} ${selectedGender === 'Female' ? 'blazer dress in warm ivory with nude heels and gold accessories' : 'navy suit with a white shirt and caramel leather shoes'}.`,
-        `Outfit 2: ${selectedGender === 'Female' ? 'High-waisted terracotta trousers paired with a forest green blouse and minimal gold jewelry' : 'Forest green chinos with a dusty rose button-down and white sneakers'}.`,
-        `Outfit 3: ${selectedGender === 'Female' ? 'A caramel midi skirt with a tucked ivory knit top and block-heel boots' : 'A relaxed caramel linen shirt with navy trousers and loafers'}.`
-      ]
-    });
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    renderResults(data);
+  } catch (err) {
+    console.error('Backend error:', err);
+    alert('Could not connect to the backend. Make sure app.py is running, then try again.\n\n' + err.message);
+    goTo('page-upload');
   }
 }
 
 
 function renderResults(data) {
-  // Swatches
+  // Skin tone headline
+  const toneEl = document.getElementById('detected-tone');
+  if (toneEl) {
+    toneEl.textContent = data.skin_tone;
+  }
+
+  // Color recommendations (names only — backend gives category names, not hex codes)
   const swatchEl = document.getElementById('color-swatches');
-  swatchEl.innerHTML = data.colors.map(c => `
-    <div>
-      <div class="swatch" style="background:${c.hex};border:1px solid rgba(255,255,255,0.15);"></div>
-      <div class="swatch-label">${c.name}</div>
-    </div>
-  `).join('');
+  if (swatchEl) {
+    swatchEl.innerHTML = (data.recommended_colors || []).map(name => `
+      <div class="swatch-label" style="padding:10px 18px;border:1px solid rgba(255,255,255,0.2);border-radius:20px;">${name}</div>
+    `).join('');
+  }
 
-
-  // Outfits
-  document.getElementById('outfit-recs').textContent = data.outfits.join('\n\n');
-
+  // Outfit photos (real images) go directly into the "Recommended Outfits" grid below
+  const moodboard = document.getElementById('pinterest-container');
+  if (moodboard) {
+    const images = data.outfit_images || [];
+    if (images.length === 0) {
+      moodboard.innerHTML = `<p style="opacity:0.6;">No outfit images yet for this combination — more being added soon.</p>`;
+    } else {
+      moodboard.innerHTML = images.map(img => `
+        <img src="data:image/jpeg;base64,${img.image}"
+             alt="${img.filename}"
+             style="width:100%;border-radius:10px;object-fit:cover;aspect-ratio:3/4;display:block;">
+      `).join('');
+    }
+  }
 
   goTo('page-results');
 }
